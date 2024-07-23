@@ -1,0 +1,23 @@
+{
+  "rickshaw-benchmark": {
+    "schema": { "version": "2020.05.18" }
+  },
+  "benchmark": "ilab",
+  "controller" : {
+    "post-script" : "%bench-dir%/ilab-post-process"
+  },
+  "client" : {
+    "files-from-controller": [
+      {
+          "src": "%bench-dir%/ilab-get-runtime",
+          "dest": "/usr/bin/"
+      },
+      {
+          "src": "%bench-dir%/ilab-client",
+          "dest": "/usr/bin/"
+      }
+    ],
+    "start": "ilab-client",
+    "runtime": "ilab-get-runtime"
+  }
+}

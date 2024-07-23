@@ -1,0 +1,62 @@
+#!/usr/bin/perl
+## -*- mode: perl; indent-tabs-mode: nil; perl-indent-level: 4 -*-
+## vim: autoindent tabstop=4 shiftwidth=4 expandtab softtabstop=4 filetype=perl
+
+use strict;
+use warnings;
+use JSON::XS;
+use Data::Dumper;
+use Time::Piece;
+BEGIN {
+    if (!(exists $ENV{'TOOLBOX_HOME'} && -d "$ENV{'TOOLBOX_HOME'}/perl")) {
+    print "This script requires libraries that are provided by the toolbox project.\n";
+    print "Toolbox can be acquired from https://github.com/perftool-incubator/toolbox and\n";
+    print "then use 'export TOOLBOX_HOME=/path/to/toolbox' so that it can be located.\n";
+    exit 1;
+    }
+}
+use lib "$ENV{'TOOLBOX_HOME'}/perl";
+use toolbox::json;
+use toolbox::metrics;
+
+my $coder = JSON::XS->new;
+my $log_file = "training_params_and_metrics_global0.jsonl";
+my @logfile_metrics;
+my %names = ();
+my %desc = ('source' => 'ilab', 'class' => 'throughput', 'type' => 'train-samples-sec');
+(my $rc, my $log_fh) = open_read_text_file($log_file);
+# file contents to parse:
+#{"epoch": 0, "step": 1, "rank": 0, "loss": 0.18146394193172455, "overall_throughput": 3.5244029279710176, "lr": 0.0, "cuda_mem_allocated": 14.08400821685791, "cuda_malloc_retries": 0, "num_loss_counted_tokens": 4940, "batch_size": 14, "total_loss": 0.4069821238517761, "gradnorm": null, "weight_norm": 557.9681396484375, "timestamp": "2024-07-18T22:46:41.628932"}
+while (<$log_fh>) {
+    my $json_ref;
+    $json_ref = $coder->decode($_);
+    # Strptime does not recognize microseconds, so we split the timestamp in two sections
+    if ( exists $$json_ref{"epoch"} and $$json_ref{"timestamp"} =~ /([^\.]*)\.(\d+)/ ) {
+	my $timestamp = $1;
+	my $msec = $2 /1000;
+	my $epoch = Time::Piece->strptime($timestamp, '%Y-%m-%dT%T')->epoch;
+        my $epoch_ms = $epoch * 1000 + $msec;
+        my %s = ('end' => int $epoch_ms, 'value' => $$json_ref{"overall_throughput"});
+        log_sample("0", \%desc, \%names, \%s);
+    }
+}
+close($log_fh);
+my $metric_data_name = finish_samples();
+
+# In any benchmark post-process script, the metrics generated need to be attributed to a
+# time-period (AKA benchmark-phase).  The period which is used to report and offical
+# result for the benchmark is the 'measurement' period.  Ohter periods thay may exist
+# could be "warm-up", "prep", etc.
+my %sample;
+my @periods;
+my %period = ('name' => 'measurement');
+my @metric_files = ( $metric_data_name );
+$period{'metric-files'} = \@metric_files;
+push(@periods, \%period);
+$sample{'primary-metric'} = "train-samples-sec";
+$sample{'primary-period'} = "measurement";
+$sample{'benchmark'} = "ilab";
+$sample{'periods'} = \@periods;
+$sample{'rickshaw-bench-metric'}{'schema'}{'version'} = "2021.04.12";
+open(JSON_FH, ">post-process-data.json") || die("Could not open file post-process-data.json for writing\n");
+print JSON_FH $coder->encode(\%sample);
