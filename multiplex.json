@@ -1,0 +1,23 @@
+{
+    "presets": {
+    },
+    "validations": {
+      "generic_string" : {
+        "description" : "all types of strings",
+        "args" : [
+            "model", "data-path"
+        ],
+        "vals" : ".+"
+      },
+      "integer_ge_zero" : {
+        "description" : "a whole number >= 0",
+        "args" : [ "nnodes", "nproc-per-node", "num-epochs", "effective-batch-size", "num-runavg-samples" ],
+        "vals" : "[1-9][0-9]*"
+      },
+      "bool_0_1" : {
+        "description" : "boolean as 0 (false) or 1 (true)",
+        "args" : [ "cpu-offload-optimizer", "cpu-offload-pin-memory" ],
+        "vals" : "[0-1]"
+      }
+  }
+}

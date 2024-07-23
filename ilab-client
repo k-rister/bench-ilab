@@ -1,0 +1,118 @@
+#!/bin/bash
+# -*- mode: sh; indent-tabs-mode: nil; sh-basic-offset: 4 -*-
+# vim: autoindent tabstop=4 shiftwidth=4 expandtab softtabstop=4 filetype=bash
+exec >ilab-client-stderrout.txt
+exec 2>&1
+
+nnodes=1
+nproc_per_node=1
+num_epochs=1
+log_level="INFO"
+effective_batch_size=""
+cpu_offload_optimizer=""
+cpu_offload_pin_memory=""
+num_runavg_samples=2
+
+opts=$(getopt -q -o "" --longoptions "model:,data-path:,nnodes:,nproc-per-node:,num-epochs:,effective-batch-size:,cpu-offload-optimizer:,cpu-offload-pin-memory:,num-runavg-samples:" -n "getopt.sh" -- "$@");
+if [ $? -ne 0 ]; then
+    printf -- "\tUnrecognized option specified\n\n"
+    exit 1
+fi
+eval set -- "$opts";
+while true; do
+    arg=$1; shift
+    val=$1; shift
+    case "$arg" in
+        --model)
+	    model=$val
+	    ;;
+        --data-path)
+	    data_path=$val
+	    ;;
+        --nnodes)
+	    nnodes=$val
+	    ;;
+        --nproc-per-node)
+	    nproc_per_node=$val
+	    ;;
+        --num-epochs)
+	    num_epochs=$val
+	    ;;
+	--effective-batch-size)
+	    effective_batch_size="--effective_batch_size $val"
+	    ;;
+        --cpu-offload-optimizer)
+	    if [ $val == "1" ]; then
+                cpu_offload_optimizer="--cpu-offload-optimizer"
+            fi
+            ;;
+        --cpu-offload-pin-memory)
+	    if [ $val == "1" ]; then
+                cpu_offload_pin_memory="--cpu-offload-pin-memory"
+            fi
+	    ;;
+        --num-runavg-samples)
+            num_runavg_samples=$val
+            ;;
+        --)
+            break
+            ;;
+        *)
+            echo "Invalid option: $1"
+            exit 1
+    esac
+done
+
+
+
+# usage: entrypoint.py [-h] --model --data-path --nnodes --nproc-per-node --ckpt-output-dir --num-epochs NUM_EPOCHS --dolomite --effective-batch-size --max-batch-len --data-output-dir --cpu-offload-optimizer --cpu-offload-pin-memory --cpu-offload-optimizer-ratio 
+train_cmd="python3.11 /instructlab/entrypoint.py\
+	    --model $model\
+	    --data-path $data_path\
+            --nnodes=$nnodes\
+            --nproc-per-node=$nproc_per_node\
+	    --num-epochs=$num_epochs
+	    --ckpt-output-dir .\
+	    $effective_batch_size\
+	    $cpu_offload_optimizer\
+	    $cpu_offload_pin_memory"
+
+# python3.11 /instructlab/entrypoint.py  --model /home/models/granite-7b-lab/ --data-path /home/data/jun12-phase05.jsonl --nnodes 1 --nproc-per-node 2 --num-epochs 1 --cpu-offload-optimizer --cpu-offload-pin-memory --ckpt-output-dir .
+
+# python3.11 /instructlab/entrypoint.py  --model /home/models/granite-7b-lab/ --data-path /home/data/jun12-phase05.jsonl --nnodes 1 --nproc-per-node 2 --num-epochs 1 --cpu-offload-optimizer --cpu-offload-pin-memory --ckpt-output-dir .
+
+echo "/home/models:"
+ls -la /home/models
+echo "/home/data:"
+ls -la /home/data
+
+
+
+echo "train cmd:"
+echo "$train_cmd"
+
+count=0
+rc=0
+echo "Training:"
+$train_cmd 2>&1 |
+{
+    while read line; do
+        echo "$line" >>train.txt
+        if echo "$line" | grep -q RunningAvgSamplesPerSec; then
+            ((count++))
+            echo "found line with RunningAvgSamplesPerSec: [$line]"
+        fi
+        if [ $count -ge $num_runavg_samples ]; then
+            break
+        fi
+    done
+    echo "count: $count"
+    if [ $count -lt $num_runavg_samples ]; then
+        echo "did not get the number of running avg samples, so exiting error"
+        exit 1
+    else
+        echo "Exiting without error"
+        exit 0
+    fi
+}
+exit $?
