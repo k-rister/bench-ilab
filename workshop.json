@@ -8,57 +8,7 @@
         {
             "name": "rhel-ai",
             "requirements": []
-        },
-        {
-            "name": "cuda-rhubi9",
-            "requirements": [
-                "python-pip-packages",
-		"os-pkgs",
-                "instructlab"
-            ]
         }
     ],
-    "requirements": [
-        {
-            "name": "python-pip-packages",
-            "type": "python311",
-            "python3_info": {
-                "packages": [
-                   "torch==2.3.0 --index-url https://download.pytorch.org/whl/cu121",
-		   "packaging wheel",
-		   "flash-attn==2.5.9.post1",
-		   "deepspeed==0.14.2",
-		   "transformers==4.40.1",
-		   "ipdb",
-		   "jupyterlab",
-		   "gpustat",
-		   "matplotlib",
-		   "hydra-core",
-		   "datasets",
-		   "rich",
-		   "numba",
-		   "'numpy<2.0.0'"
-                ]
-            }
-        },
-        {
-            "name": "os-pkgs",
-            "type": "distro",
-            "distro_info": {
-                "packages": [
-		    "libnccl",
-		    "libaio-devel"
-                ]
-            }
-        },
-	{   "name": "instructlab",
-            "type": "manual",
-            "manual_info": {
-                "commands": [
-                    "git clone https://github.com/instructlab/training.git /var/run/training",
-		    "pushd /var/run/training; python3.11 -m pip install ."
-                ]
-            }
-        }
-    ]
+    "requirements": []
 }
