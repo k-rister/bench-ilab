@@ -11,12 +11,22 @@
       },
       "integer_ge_zero" : {
         "description" : "a whole number >= 0",
-        "args" : [ "nnodes", "nproc-per-node", "num-epochs", "effective-batch-size", "num-runavg-samples" ],
+        "args" : [ "nnodes", "gpus", "num-epochs", "effective-batch-size", "max-seq-length", "save-samples" ],
         "vals" : "[1-9][0-9]*"
+      },
+      "workflows" : {
+        "description" : "what type of work to do",
+        "args" : [ "workflow" ],
+        "vals" : "train|train+eval|eval|sdg|sdg+train|sdg+train+eval"
+      },
+      "train_until" : {
+        "description" : "checkpoint:N, or runavg:N, or complete (N is a positive int)",
+        "args" : [ "train-until" ],
+        "vals" : "((checkpoint|runavg)\\:([1-9][0-9]*)|complete)"
       },
       "bool_0_1" : {
         "description" : "boolean as 0 (false) or 1 (true)",
-        "args" : [ "cpu-offload-optimizer", "cpu-offload-pin-memory" ],
+        "args" : [ "deepspeed-cpu-offload-optimizer", "deepspeed-cpu-offload-optimizer-pin-memory" ],
         "vals" : "[0-1]"
       }
   }

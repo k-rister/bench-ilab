@@ -4,16 +4,19 @@
 exec >ilab-client-stderrout.txt
 exec 2>&1
 
+workflow="train"
+train_until="complete" # checkpoint:N, runavg:N, or complete
 nnodes=1
-nproc_per_node=1
+gpus=1
 num_epochs=1
 log_level="INFO"
+save_samples=""
+max_seq_length=""
 effective_batch_size=""
 cpu_offload_optimizer=""
 cpu_offload_pin_memory=""
-num_runavg_samples=2
 
-opts=$(getopt -q -o "" --longoptions "model:,data-path:,nnodes:,nproc-per-node:,num-epochs:,effective-batch-size:,cpu-offload-optimizer:,cpu-offload-pin-memory:,num-runavg-samples:" -n "getopt.sh" -- "$@");
+opts=$(getopt -q -o "" --longoptions "workflow:,save-samples:,max-seq-len:,model:,data-path:,nnodes:,gpus:,num-epochs:,effective-batch-size:,deepspeed-cpu-offload-optimizer:,deepspeed-cpu-offload-optimizer-pin-memory:,train-until:" -n "getopt.sh" -- "$@");
 if [ $? -ne 0 ]; then
     printf -- "\tUnrecognized option specified\n\n"
     exit 1
@@ -23,96 +26,169 @@ while true; do
     arg=$1; shift
     val=$1; shift
     case "$arg" in
+        --workflow)
+        workflow="$val"
+        ;;
+        --save-samples)
+        save_samples="--save-samples=$val"
+        ;;
+        --max-seq-len)
+        max_seq_len="--max-seq-len=$val"
+        ;;
         --model)
-	    model=$val
-	    ;;
+        model=$val
+        ;;
         --data-path)
-	    data_path=$val
-	    ;;
+        data_path=$val
+        ;;
         --nnodes)
-	    nnodes=$val
-	    ;;
-        --nproc-per-node)
-	    nproc_per_node=$val
-	    ;;
+        nnodes=$val
+        ;;
+        --gpus)
+        gpus=$val
+        ;;
         --num-epochs)
-	    num_epochs=$val
-	    ;;
-	--effective-batch-size)
-	    effective_batch_size="--effective_batch_size $val"
-	    ;;
-        --cpu-offload-optimizer)
-	    if [ $val == "1" ]; then
-                cpu_offload_optimizer="--cpu-offload-optimizer"
+        num_epochs=$val
+        ;;
+        --effective-batch-size)
+        effective_batch_size="--effective_batch_size $val"
+        ;;
+        --deepspeed-cpu-offload-optimizer)
+        if [ $val == "1" ]; then
+                cpu_offload_optimizer="--deepspeed-cpu-offload-optimizer True"
             fi
             ;;
-        --cpu-offload-pin-memory)
-	    if [ $val == "1" ]; then
-                cpu_offload_pin_memory="--cpu-offload-pin-memory"
+        --deepspeed-cpu-offload-optimizer-pin-memory)
+        if [ $val == "1" ]; then
+                cpu_offload_pin_memory="--deepspeed-cpu-offload-optimizer-pin-memory True"
             fi
-	    ;;
-        --num-runavg-samples)
-            num_runavg_samples=$val
+        ;;
+        --train-until)
+            train_until=$val
             ;;
         --)
             break
             ;;
         *)
-            echo "Invalid option: $1"
+            echo "Invalid option: [$arg]"
             exit 1
     esac
 done
 
+ilab config init --non-interactive
 
+echo "workflow: $workflow"
+echo "train_until: $train_until"
+echo "nnodes: $nnodes"
+echo "gpus: $gpus"
+echo "num_epochs: $num_epochs"
+echo "log_level: $log_level"
+echo "save_sample: $save_samples"
+echo "max_seq_length: $max_seq_length"
+echo "effective_batch_size: $effective_batch_size"
+echo "cpu_offload_optimizer: $cpu_offload_optimizer"
+echo "cpu_offload_pin_memory: $cpu_offload_pin_memory"
 
-# usage: entrypoint.py [-h] --model --data-path --nnodes --nproc-per-node --ckpt-output-dir --num-epochs NUM_EPOCHS --dolomite --effective-batch-size --max-batch-len --data-output-dir --cpu-offload-optimizer --cpu-offload-pin-memory --cpu-offload-optimizer-ratio 
-train_cmd="python3.11 /instructlab/entrypoint.py\
-	    --model $model\
-	    --data-path $data_path\
+train_cmd="ilab model train\
+        --model-path $model\
+        --data-path $data_path\
             --nnodes=$nnodes\
-            --nproc-per-node=$nproc_per_node\
-	    --num-epochs=$num_epochs
-	    --ckpt-output-dir .\
-	    $effective_batch_size\
-	    $cpu_offload_optimizer\
-	    $cpu_offload_pin_memory"
-
-# python3.11 /instructlab/entrypoint.py  --model /home/models/granite-7b-lab/ --data-path /home/data/jun12-phase05.jsonl --nnodes 1 --nproc-per-node 2 --num-epochs 1 --cpu-offload-optimizer --cpu-offload-pin-memory --ckpt-output-dir .
-
-# python3.11 /instructlab/entrypoint.py  --model /home/models/granite-7b-lab/ --data-path /home/data/jun12-phase05.jsonl --nnodes 1 --nproc-per-node 2 --num-epochs 1 --cpu-offload-optimizer --cpu-offload-pin-memory --ckpt-output-dir .
+            --gpus=$gpus\
+        --num-epochs=$num_epochs
+        --ckpt-output-dir .\
+            $save_samples\
+            $max_seq_length\
+        $effective_batch_size\
+        $cpu_offload_optimizer\
+        $cpu_offload_pin_memory"
 
 echo "/home/models:"
 ls -la /home/models
 echo "/home/data:"
 ls -la /home/data
 
-
-
 echo "train cmd:"
 echo "$train_cmd"
 
 count=0
 rc=0
+
+if [[ $train_until =~ ^checkpoint:([0-9]+) ]]; then
+    num_samples=${BASH_REMATCH[1]}
+    watch_regex="Model\ssaved\sin\shf_format/(.*)"
+elif [[ $train_until =~ ^runavg:([0-9]+) ]]; then
+    num_samples=${BASH_REMATCH[1]}
+    watch_regex='RunningAvgSamplesPerSec'
+else
+    echo "not watching for 'Model saved in' or 'RunningAvgSamplesPerSec' and will train for $num_epochs epochs"
+    num_samples=0
+fi
+
+echo "watch_regex: [$watch_regex]"
+echo "num_samples: [$num_samples]"
 echo "Training:"
+snapshot_file=""
 $train_cmd 2>&1 |
 {
+    count=0
     while read line; do
         echo "$line" >>train.txt
-        if echo "$line" | grep -q RunningAvgSamplesPerSec; then
+        if [[ $line =~ $watch_regex ]]; then
+            snapshot=${BASH_REMATCH[1]}
             ((count++))
-            echo "found line with RunningAvgSamplesPerSec: [$line]"
+            echo found $line
+            if [[ $train_until =~ "^checkpoint:([0-9]+)" ]]; then
+                echo "Found snapshot: hf_format/$snapshot"
+            fi
         fi
-        if [ $count -ge $num_runavg_samples ]; then
+        if [[ $count -ne 0 && $count -ge $num_samples ]]; then
+            echo "Found the checkpoint we needed: hf_format/$snapshot"
+            echo "hf_format/$snapshot" >last_checkpointed_model.txt
             break
         fi
     done
     echo "count: $count"
-    if [ $count -lt $num_runavg_samples ]; then
-        echo "did not get the number of running avg samples, so exiting error"
+    if [[ $count -lt $num_samples ]]; then
+        echo "did not get the number of $watch_regex samples, so exiting error"
         exit 1
     else
         echo "Exiting without error"
         exit 0
     fi
 }
-exit $?
+rc=$?
+wait
+for file in training_params_and_metrics_global0.jsonl full_logs_global0.log train.txt; do
+    if [ -e $file ]; then
+        xz $file
+    fi
+done
+
+if [[ $worklfow == "train+eval" ]]; then
+    if [[ ! -e last_checkpointed_model.txt ]]; then
+        echo "Error: could not find file: last_checkpointed_model.txt"
+    exit 1
+    fi
+    model_path=`cat last_checkpointed_model.txt`
+    if [ ! -e $model_path ]; then
+        echo "Could not find directory for checkpointed model: $model_path"
+    exit 1
+    fi
+    eval_cmd="ilab model evaluate"
+    eval_cmd+=" --benchmark mmlu_branch"
+    eval_cmd+=" --model $model_path"
+    eval_cmd+=" --tasks-dir tests/testdata/mmlu_branch/"
+    eval_cmd+=" --base-model $model"
+    echo "eval_cmd: $eval_cmd"
+    echo "Evaluating:"
+    $eval_cmd >eval.txt 2>&1
+
+else
+    echo "Deleting any snapshots because eval not happening after training"
+    rm -rf ht_format/*
+fi
+
+rm -rf ht_format/*
+
+
+exit $rc
