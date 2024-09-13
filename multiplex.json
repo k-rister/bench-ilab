@@ -11,7 +11,12 @@
       },
       "integer_ge_zero" : {
         "description" : "a whole number >= 0",
-        "args" : [ "nnodes", "gpus", "num-epochs", "effective-batch-size", "max-seq-length", "save-samples" ],
+        "args" : [ "batch-size" ],
+        "vals" : "[0-9]+"
+      },
+      "integer_gt_zero" : {
+        "description" : "a whole number > 0",
+        "args" : [ "num-cpus", "nnodes", "gpus", "num-epochs", "effective-batch-size", "max-seq-length", "save-samples" ],
         "vals" : "[1-9][0-9]*"
       },
       "workflows" : {

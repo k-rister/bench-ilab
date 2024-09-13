@@ -9,6 +9,8 @@ import re
 import copy
 import math
 import json
+import argparse
+import glob
 from datetime import datetime
 from pathlib import Path
 
@@ -27,51 +29,142 @@ else:
 from toolbox.metrics import log_sample
 from toolbox.metrics import finish_samples
 
-# In any benchmark post-process script, the metrics generated need to be attributed to a
-# time-period (AKA benchmark-phase).  The period which is used to report and offical
-# result for the benchmark is the 'measurement' period.  Other periods thay may exist
-# could be "warm-up", "prep", etc.
+class t_global(object):
+     args = None
 
-iter_sample = { 'primary-metric': "train-samples-sec",  # will [eventually] vary depending on what was done
-    'primary-period': "measurement",
-    'benchmark': "ilab",
-    'periods': [],
-    'rickshaw-bench-metric': { 'schema': { 'version': '2021.04.12' } }
-    }
+def process_options():
+    parser = argparse.ArgumentParser(description = 'Post process raw benchmark data into Common Data Model output')
 
-metric_files = []
+    # known options:
+        #--workflow)
+        #--save-samples)
+        #--max-seq-len)
+        #--model)
+        #--data-path)
+        #--nnodes)
+        #--gpus)
+        #--num-epochs)
+        #--effective-batch-size)
+        #--deepspeed-cpu-offload-optimizer)
+        #--deepspeed-cpu-offload-optimizer-pin-memory)
+        #--train-until)
 
-period = { 'name': 'measurement', 'metric-files': [] }
-file_id = 'global0'
+    parser.add_argument('--workflow',
+                        dest = 'workflow',
+                        help = 'sdg, train, or eval',
+                        default = ""
+                        )
 
-jsonl_desc = {'source' : 'ilab', 'type': 'train-samples-sec', 'class': 'throughput'}
-names = {}
-filename = 'training_params_and_metrics_global0.jsonl.xz'
-print('Opening file {0:s}'.format(filename))
-with lzma.open(filename, 'rt') as file:
-    for line in file:
-        d = json.loads(line)
-        # file contents to parse (per line):
-        #{"epoch": 0, "step": 1, "rank": 0,
-        # "loss": 0.18146394193172455,
-        # "overall_throughput": 3.5244029279710176,
-        # "lr": 0.0, "cuda_mem_allocated": 14.08400821685791,
-        # "cuda_malloc_retries": 0,
-        # "num_loss_counted_tokens": 4940, "batch_size": 14,
-        # "total_loss": 0.4069821238517761, "gradnorm": null,
-        # "weight_norm": 557.9681396484375,
-        # "timestamp": "2024-07-18T22:46:41.628932"}
-        if 'epoch' in d.keys():
-            dt = datetime.strptime(d['timestamp'], '%Y-%m-%dT%X.%f')
-            ts = math.floor(dt.timestamp() * 1000)
-            sample = {'end': ts, 'value': d['overall_throughput']}
-            log_sample(file_id, jsonl_desc, names, sample)
+    t_global.args, unknown = parser.parse_known_args()
 
-metric_file_name = finish_samples()
+    return()
 
-period['metric-files'].append(metric_file_name)
-iter_sample['periods'].append(period)
+def main():
+    process_options()
 
-f = open('post-process-data.json', 'w')
-f.write(json.dumps(iter_sample))
-f.close
+    if t_global.args.workflow == '':
+        print('workflow was not defined, exiting')
+        return(1)
+
+    # In any benchmark post-process script, the metrics generated need to be attributed to a
+    # time-period (AKA benchmark-phase).  The period which is used to report and offical
+    # result for the benchmark is the 'measurement' period.  Other periods thay may exist
+    # could be "warm-up", "prep", etc.
+
+    iter_sample = {
+        'primary-period': "measurement",
+        'benchmark': "ilab",
+        'periods': [],
+        'rickshaw-bench-metric': { 'schema': { 'version': '2021.04.12' } }
+        }
+
+    metric_files = []
+
+    period = { 'name': 'measurement', 'metric-files': [] }
+    file_id = 'global0'
+
+    desc = {'source' : 'ilab', 'class': 'throughput'}
+    names = {}
+    if t_global.args.workflow == 'train':
+        desc['type'] = 'train-samples-sec';
+        iter_sample['primary-metric'] = 'train-samples-sec'
+        filename = 'training_params_and_metrics_global0.jsonl.xz'
+        with lzma.open(filename, 'rt') as file:
+            for line in file:
+                d = json.loads(line)
+                # file contents to parse (per line):
+                #{"epoch": 0, "step": 1, "rank": 0,
+                # "loss": 0.18146394193172455,
+                # "overall_throughput": 3.5244029279710176,
+                # "lr": 0.0, "cuda_mem_allocated": 14.08400821685791,
+                # "cuda_malloc_retries": 0,
+                # "num_loss_counted_tokens": 4940, "batch_size": 14,
+                # "total_loss": 0.4069821238517761, "gradnorm": null,
+                # "weight_norm": 557.9681396484375,
+                # "timestamp": "2024-07-18T22:46:41.628932"}
+                if 'epoch' in d.keys():
+                    dt = datetime.strptime(d['timestamp'], '%Y-%m-%dT%X.%f')
+                    ts = math.floor(dt.timestamp() * 1000)
+                    sample = {'end': ts, 'value': d['overall_throughput']}
+                    log_sample(file_id, desc, names, sample)
+        metric_file_name = finish_samples()
+        period['metric-files'].append(metric_file_name)
+        iter_sample['periods'].append(period)
+    elif t_global.args.workflow == 'sdg':
+        print('sdg')
+        desc['type'] = 'sdg-samples-sec';
+        iter_sample['primary-metric'] = 'sdg-samples-sec'
+        num_skills = open("skills-num-samples.txt").readline().rstrip()
+        print('skills num samples')
+        print(num_skills)
+        # INFO 2024-09-10 15:10:46,813 instructlab.sdg.datamixing:126: Dataset loaded with 70 samples
+        # INFO 2024-09-09 20:39:58,535 instructlab.sdg:438: Generation took 1373.39s
+        skipped_skills = False
+        total_samples = int(0)
+        # Add up the samples from all "dataset loaded" lines only after the skills are loaded
+        # Skills are loaded by detecting the "dataset loaded" line with N samples,
+        # where N = skills-num-samples.txt (which comes from counting lines in
+        # /usr/share/instructlab/sdg/datasets/skills.jsonl during the benchmark
+        with lzma.open("sdg.txt.xz", 'rt') as file:
+            for line in file:
+                #print('line')
+                #print(line)
+                if skipped_skills:
+                    if reggy := re.search(r'^INFO\s(\d+-\d+-\d+\s\d+:\d+:\d+\d+,\d+).+Generation\stook\s(\d+\.\d+)s', line):
+                        print('found generation line')
+                        print(line)
+                        elapsed_time = float(reggy.group(2))
+                        end_dt = reggy.group(1)
+                        samples_sec = float(total_samples / elapsed_time)
+                        dt = datetime.strptime(end_dt, '%Y-%m-%d %X,%f')
+                        end_ts = int(math.floor(dt.timestamp() * 1000))
+                        begin_ts = int(end_ts - (elapsed_time * 1000))
+                        # We have exactly 1 sample, so providing the 'begin' timestamp is required
+                        sample = {'begin': begin_ts, 'end': end_ts, 'value': samples_sec}
+                        print('log_sample')
+                        log_sample(file_id, desc, names, sample)
+                        break
+                    if reggy := re.search(r'^INFO\s\d+-\d+-\d+\s\d+:\d+:\d+,\d+.+Dataset\sloaded\swith\s(\d+)\ssamples', line):
+                        print('found Dataset line')
+                        print(line)
+                        total_samples = total_samples + int(reggy.group(1))
+                else:
+                    if reggy := re.search(r'^INFO\s\d+-\d+-\d+\s\d+:\d+:\d+,\d+\sinstructlab.sdg.datamixing:\d+:\sDataset\sloaded\swith\s(\d+)\ssamples', line):
+                        print('found skills Dataset line')
+                        print(line)
+                        num_samples = reggy.group(1)
+                        if num_samples == num_skills:
+                            skipped_skills = True
+        
+
+        metric_file_name = finish_samples()
+        period['metric-files'].append(metric_file_name)
+        iter_sample['periods'].append(period)
+    f = open('post-process-data.json', 'w')
+    f.write(json.dumps(iter_sample))
+    f.close
+    return(0)
+
+
+if __name__ == "__main__":
+    exit(main())
