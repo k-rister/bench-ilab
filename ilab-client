@@ -9,14 +9,14 @@ train_until="complete" # checkpoint:N, runavg:N, or complete
 nnodes=1
 gpus=1
 num_epochs=1
-log_level="INFO"
 save_samples=""
 max_seq_length=""
 effective_batch_size=""
 cpu_offload_optimizer=""
 cpu_offload_pin_memory=""
 
-opts=$(getopt -q -o "" --longoptions "workflow:,save-samples:,max-seq-len:,model:,data-path:,nnodes:,gpus:,num-epochs:,effective-batch-size:,deepspeed-cpu-offload-optimizer:,deepspeed-cpu-offload-optimizer-pin-memory:,train-until:" -n "getopt.sh" -- "$@");
+
+opts=$(getopt -q -o "" --longoptions "workflow:,num-cpus:,batch-size:,save-samples:,max-seq-len:,model:,data-path:,nnodes:,gpus:,num-epochs:,effective-batch-size:,deepspeed-cpu-offload-optimizer:,deepspeed-cpu-offload-optimizer-pin-memory:,train-until:" -n "getopt.sh" -- "$@");
 if [ $? -ne 0 ]; then
     printf -- "\tUnrecognized option specified\n\n"
     exit 1
@@ -29,23 +29,36 @@ while true; do
         --workflow)
         workflow="$val"
         ;;
+
+	# The following options are for SDG
+        --num-cpus)
+        num_cpus="--num-cpus=$val"
+        ;;
+        --batch-size)
+        batch_size="--batch-size=$val"
+        ;;
+
+
+	# The following options are for SDG and training
+        --gpus)
+        gpus="--gpus=$val"
+        ;;
+        --model)
+        model=$val
+        ;;
+
+	# The following options are for training
         --save-samples)
         save_samples="--save-samples=$val"
         ;;
         --max-seq-len)
         max_seq_len="--max-seq-len=$val"
         ;;
-        --model)
-        model=$val
-        ;;
         --data-path)
         data_path=$val
         ;;
         --nnodes)
         nnodes=$val
-        ;;
-        --gpus)
-        gpus=$val
         ;;
         --num-epochs)
         num_epochs=$val
@@ -76,93 +89,129 @@ while true; do
 done
 
 ilab config init --non-interactive
+cp /opt/app-root/src/.config/instructlab/config.yaml .
 
 echo "workflow: $workflow"
-echo "train_until: $train_until"
 echo "nnodes: $nnodes"
 echo "gpus: $gpus"
-echo "num_epochs: $num_epochs"
-echo "log_level: $log_level"
-echo "save_sample: $save_samples"
-echo "max_seq_length: $max_seq_length"
-echo "effective_batch_size: $effective_batch_size"
-echo "cpu_offload_optimizer: $cpu_offload_optimizer"
-echo "cpu_offload_pin_memory: $cpu_offload_pin_memory"
 
-train_cmd="ilab model train\
-        --model-path $model\
-        --data-path $data_path\
+if [[ $workflow =~ ^train.* ]]; then
+    echo "train_until: $train_until"
+    echo "num_epochs: $num_epochs"
+    echo "save_sample: $save_samples"
+    echo "max_seq_length: $max_seq_length"
+    echo "effective_batch_size: $effective_batch_size"
+    echo "cpu_offload_optimizer: $cpu_offload_optimizer"
+    echo "cpu_offload_pin_memory: $cpu_offload_pin_memory"
+    train_cmd="ilab model train\
+            --model-path $model\
+            --data-path $data_path\
             --nnodes=$nnodes\
-            --gpus=$gpus\
-        --num-epochs=$num_epochs
-        --ckpt-output-dir .\
+            $gpus\
+            --num-epochs=$num_epochs
+            --ckpt-output-dir .\
             $save_samples\
             $max_seq_length\
-        $effective_batch_size\
-        $cpu_offload_optimizer\
-        $cpu_offload_pin_memory"
+            $effective_batch_size\
+            $cpu_offload_optimizer\
+            $cpu_offload_pin_memory"
 
-echo "/home/models:"
-ls -la /home/models
-echo "/home/data:"
-ls -la /home/data
+    echo "/home/models:"
+    ls -la /home/models
+    echo "/home/data:"
+    ls -la /home/data
 
-echo "train cmd:"
-echo "$train_cmd"
+    echo "train cmd:"
+    echo "$train_cmd"
 
-count=0
-rc=0
-
-if [[ $train_until =~ ^checkpoint:([0-9]+) ]]; then
-    num_samples=${BASH_REMATCH[1]}
-    watch_regex="Model\ssaved\sin\shf_format/(.*)"
-elif [[ $train_until =~ ^runavg:([0-9]+) ]]; then
-    num_samples=${BASH_REMATCH[1]}
-    watch_regex='RunningAvgSamplesPerSec'
-else
-    echo "not watching for 'Model saved in' or 'RunningAvgSamplesPerSec' and will train for $num_epochs epochs"
-    num_samples=0
-fi
-
-echo "watch_regex: [$watch_regex]"
-echo "num_samples: [$num_samples]"
-echo "Training:"
-snapshot_file=""
-$train_cmd 2>&1 |
-{
     count=0
-    while read line; do
-        echo "$line" >>train.txt
-        if [[ $line =~ $watch_regex ]]; then
-            snapshot=${BASH_REMATCH[1]}
-            ((count++))
-            echo found $line
-            if [[ $train_until =~ "^checkpoint:([0-9]+)" ]]; then
-                echo "Found snapshot: hf_format/$snapshot"
+    rc=0
+
+    if [[ $train_until =~ ^checkpoint:([0-9]+) ]]; then
+        num_samples=${BASH_REMATCH[1]}
+        watch_regex="Model\ssaved\sin\shf_format/(.*)"
+    elif [[ $train_until =~ ^runavg:([0-9]+) ]]; then
+        num_samples=${BASH_REMATCH[1]}
+        watch_regex='RunningAvgSamplesPerSec'
+    else
+        echo "not watching for 'Model saved in' or 'RunningAvgSamplesPerSec' and will train for $num_epochs epochs"
+        num_samples=0
+    fi
+
+    echo "watch_regex: [$watch_regex]"
+    echo "num_samples: [$num_samples]"
+    echo "Training:"
+    snapshot_file=""
+    $train_cmd 2>&1 |
+    {
+        count=0
+        while read line; do
+            echo "$line" >>train.txt
+            if [[ $line =~ $watch_regex ]]; then
+                snapshot=${BASH_REMATCH[1]}
+                ((count++))
+                echo found $line
+                if [[ $train_until =~ "^checkpoint:([0-9]+)" ]]; then
+                    echo "Found snapshot: hf_format/$snapshot"
+                fi
             fi
+            if [[ $count -ne 0 && $count -ge $num_samples ]]; then
+                echo "Found the checkpoint we needed: hf_format/$snapshot"
+                echo "hf_format/$snapshot" >last_checkpointed_model.txt
+                break
+            fi
+        done
+        echo "count: $count"
+        if [[ $count -lt $num_samples ]]; then
+            echo "did not get the number of $watch_regex samples, so exiting error"
+            exit 1
+        else
+            echo "Exiting without error"
+            exit 0
         fi
-        if [[ $count -ne 0 && $count -ge $num_samples ]]; then
-            echo "Found the checkpoint we needed: hf_format/$snapshot"
-            echo "hf_format/$snapshot" >last_checkpointed_model.txt
-            break
+    }
+    rc=$?
+    wait
+    for file in training_params_and_metrics_global0.jsonl full_logs_global0.log train.txt; do
+        if [ -e $file ]; then
+            xz $file
         fi
     done
-    echo "count: $count"
-    if [[ $count -lt $num_samples ]]; then
-        echo "did not get the number of $watch_regex samples, so exiting error"
-        exit 1
-    else
-        echo "Exiting without error"
-        exit 0
-    fi
-}
-rc=$?
-wait
-for file in training_params_and_metrics_global0.jsonl full_logs_global0.log train.txt; do
-    if [ -e $file ]; then
-        xz $file
-    fi
-done
+elif [[ $workflow =~ ^sdg.* ]]; then
+    sdg_cmd="ilab data generate\
+            --model $model\
+	    $num_cpus\
+	    $batch_size\
+            $gpus\
+            --output-dir ."
+
+    echo "sdg cmd:"
+    echo "$sdg_cmd"
+
+    ilab taxonomy diff
+
+    # This assumes LoRa already exists and is not downloaded by InstructLab every time
+    # This assumes dir for LoRa is always in /home/data/lora, should be changed to a bench param (--lora-dir)
+    ln -sf /home/data/lora/text-classifier-skill-v3.3-clm-copy /opt/app-root/src/.cache/instructlab/models/skills-adapter-v3
+    ln -sf /home/data/lora/text-classifier-knowledge-v3-clm-copy /opt/app-root/src/.cache/instructlab/models/knowledge-adapter-v3
+
+    # This assumes taxonomy for phoenix and mtba already exists
+    # This assumes dir for taxonomy is always in /home/data/taxonomy/knowledge/phoenix,
+    # should be changed to bench param (--taxonomy-phoenix-dir --taxonomy-mtba-dir)
+    ln -sf /home/data/taxonomy/knowledge/phoenix /opt/app-root/src/.local/share/instructlab/taxonomy/knowledge/phoenix
+    ln -sf /home/data/taxonomy/knowledge/mtba /opt/app-root/src/.local/share/instructlab/taxonomy/knowledge/mtba
+
+    ilab diff
+    # The following is needed for post-processing
+    wc -l /usr/share/instructlab/sdg/datasets/skills.jsonl | awk '{print $1}' >skills-num-samples.txt
+
+    $sdg_cmd >sdg.txt 2>&1
+    rc=$?
+    xz sdg.txt
+else
+    echo "Workflow [$workflow] not supported, exiting"
+    exit 1
+fi
 
 if [[ $worklfow == "train+eval" ]]; then
     if [[ ! -e last_checkpointed_model.txt ]]; then
@@ -189,6 +238,5 @@ else
 fi
 
 rm -rf ht_format/*
-
 
 exit $rc
