@@ -9,7 +9,15 @@
   "client" : {
     "files-from-controller": [
       {
+          "src": "%bench-dir%/random-but-same",
+          "dest": "/tmp/"
+      },
+      {
           "src": "%bench-dir%/ilab-get-runtime",
+          "dest": "/usr/bin/"
+      },
+      {
+          "src": "%bench-dir%/ilab-base",
           "dest": "/usr/bin/"
       },
       {
