@@ -4,19 +4,50 @@
 exec >ilab-client-stderrout.txt
 exec 2>&1
 
+. /usr/bin/ilab-base || (echo "/usr/bin/ilab-base not found"; exit 1)
+
 workflow="train"
-train_until="complete" # checkpoint:N, runavg:N, or complete
 nnodes=1
-gpus=1
-num_epochs=1
-save_samples=""
-max_seq_length=""
-effective_batch_size=""
-cpu_offload_optimizer=""
-cpu_offload_pin_memory=""
+train_profile="L40_x4"
+train_model_path="/home/models/granite-7b-redhat-lab"
+train_phased_mt_bench_judge="/root/.cache/instructlab/models/prometheus-8x7b-v2-0"
+train_phased_phase1_data="/home/data/training/jul19-knowledge-26k.jsonl"
+train_phased_phase1_num_epochs=2
+train_phased_phase1_samples_per_save=""
+train_phased_phase1_trim_samples=""
+train_phased_phase2_data="/usr/share/instructlab/sdg/datasets/skills.jsonl"
+train_phased_phase2_num_epochs=2
+train_phased_phase2_samples_per_save=""
+train_phased_phase2_trim_samples="15000"
 
+ilab --version | awk '{print $3}' >ilab-version.txt
+# 0.19.1 = rhelai 1.2
+# 0.18.3 = rhelai 1.1.0
 
-opts=$(getopt -q -o "" --longoptions "workflow:,num-cpus:,batch-size:,save-samples:,max-seq-len:,model:,data-path:,nnodes:,gpus:,num-epochs:,effective-batch-size:,deepspeed-cpu-offload-optimizer:,deepspeed-cpu-offload-optimizer-pin-memory:,train-until:" -n "getopt.sh" -- "$@");
+pwd=`/bin/pwd`
+pushd /opt/app-root/lib/python3.11/site-packages
+find . -name METADATA | cpio -pdumv $pwd/instructlab-site-packages-metadata
+popd
+
+longopts=""
+longopts+=" workflow:"
+longopts+=",sdg-num-cpus:"
+longopts+=",sdg-batch-size:"
+longopts+=",sdg-model:"
+longopts+=",sdg-gpus:"
+longopts+=",train-profile:"
+longopts+=",train-model-path:"
+longopts+=",train-phased-mt-bench-judge:"
+longopts+=",train-phased-phase1-data:"
+longopts+=",train-phased-phase1-num-epochs:"
+longopts+=",train-phased-phase1-samples-per-save:"
+longopts+=",train-phased-phase1-trim-data-samples:"
+longopts+=",train-phased-phase2-data:"
+longopts+=",train-phased-phase2-num-epochs:"
+longopts+=",train-phased-phase2-samples-per-save:"
+longopts+=",train-phased-phase2-trim-data-samples:"
+
+opts=$(getopt -q -o "" --longoptions "$longopts" -n "getopt.sh" -- "$@");
 if [ $? -ne 0 ]; then
     printf -- "\tUnrecognized option specified\n\n"
     exit 1
@@ -27,57 +58,58 @@ while true; do
     val=$1; shift
     case "$arg" in
         --workflow)
-        workflow="$val"
-        ;;
-
-	# The following options are for SDG
-        --num-cpus)
-        num_cpus="--num-cpus=$val"
-        ;;
-        --batch-size)
-        batch_size="--batch-size=$val"
-        ;;
-
-
-	# The following options are for SDG and training
-        --gpus)
-        gpus="--gpus=$val"
-        ;;
-        --model)
-        model=$val
-        ;;
-
-	# The following options are for training
-        --save-samples)
-        save_samples="--save-samples=$val"
-        ;;
-        --max-seq-len)
-        max_seq_len="--max-seq-len=$val"
-        ;;
-        --data-path)
-        data_path=$val
-        ;;
-        --nnodes)
-        nnodes=$val
-        ;;
-        --num-epochs)
-        num_epochs=$val
-        ;;
-        --effective-batch-size)
-        effective_batch_size="--effective_batch_size $val"
-        ;;
-        --deepspeed-cpu-offload-optimizer)
-        if [ $val == "1" ]; then
-                cpu_offload_optimizer="--deepspeed-cpu-offload-optimizer True"
-            fi
+            workflow="$val"
             ;;
-        --deepspeed-cpu-offload-optimizer-pin-memory)
-        if [ $val == "1" ]; then
-                cpu_offload_pin_memory="--deepspeed-cpu-offload-optimizer-pin-memory True"
-            fi
-        ;;
-        --train-until)
-            train_until=$val
+
+    # The following options are for sdg
+        --sdg-model)
+            sdg_model=$val
+            ;;
+        --sdg-num-cpus)
+            sdg_num_cpus=" --num-cpus $val"
+            ;;
+        --sdg-gpus)
+            sdg_num_cpus=" --gpus $val"
+            ;;
+        --sdg-batch-size)
+            sdg_batch_size=" --batch-size $val"
+            ;;
+
+    # The following options are for training
+        --train-profile)
+            train_profile=$val
+            ;;
+        --train-model-path)
+            train_model_path=$val
+            ;;
+        --train-phased-mt-bench-judge)
+            train_phased_mt_bench_judge=$val
+            ;;
+        # For phase1
+        --train-phased-phase1-data)
+            train_phased_phase1_data=$val
+            ;;
+        --train-phased-phase1-num-epochs)
+            train_phased_phase1_num_epochs=$val
+            ;;
+        --train-phased-phase1-samples-per-save)
+            train_phased_phase1_samples_per_save="--phased-phase1-samples-per-save=$val"
+            ;;
+        --train-phased-phase1-trim-data-samples)
+            train_phased_phase1_trim_samples=$val
+            ;;
+        # For phase2
+        --train-phased-phase2-data)
+            train_phased_phase2_data=$val
+            ;;
+        --train-phased-phase2-num-epochs)
+            train_phased_phase2_num_epochs=$val
+            ;;
+        --train-phased-phase2-samples-per-save)
+            train_phased_phase2_samples_per_save="--phased-phase2-samples-per-save=$val"
+            ;;
+        --train-phased-phase2-trim-data-samples)
+            train_phased_phase2_trim_samples=$val
             ;;
         --)
             break
@@ -88,106 +120,103 @@ while true; do
     esac
 done
 
-ilab config init --non-interactive
-cp /opt/app-root/src/.config/instructlab/config.yaml .
+# Valid values for $train_profile:
+# A100_H100_x2 A100_H100_x4 A100_H100_x8 L40_x4 L40_x8 L4_x8 train_a100x4x8
+ilab config init --non-interactive --train-profile /usr/share/instructlab/training/profiles/$train_profile.yaml
+
+ilab config show >ilab-config-show.yaml
 
 echo "workflow: $workflow"
 echo "nnodes: $nnodes"
 echo "gpus: $gpus"
 
 if [[ $workflow =~ ^train.* ]]; then
-    echo "train_until: $train_until"
-    echo "num_epochs: $num_epochs"
-    echo "save_sample: $save_samples"
-    echo "max_seq_length: $max_seq_length"
-    echo "effective_batch_size: $effective_batch_size"
+    ilab model train --help >ilab-model-train-help.txt
     echo "cpu_offload_optimizer: $cpu_offload_optimizer"
     echo "cpu_offload_pin_memory: $cpu_offload_pin_memory"
-    train_cmd="ilab model train\
-            --model-path $model\
-            --data-path $data_path\
-            --nnodes=$nnodes\
-            $gpus\
-            --num-epochs=$num_epochs
-            --ckpt-output-dir .\
-            $save_samples\
-            $max_seq_length\
-            $effective_batch_size\
-            $cpu_offload_optimizer\
-            $cpu_offload_pin_memory"
+    mkdir -p e2e
 
-    echo "/home/models:"
-    ls -la /home/models
-    echo "/home/data:"
-    ls -la /home/data
+    if [[ ! -z "$train_phased_phase1_trim_samples" ]]; then
+        if [[ ! -e /tmp/random-but-same ]]; then
+            exit_error "Could not find /tmp/random-but-same"
+	fi
+        original_num_samples=`wc -l $train_phased_phase1_data | awk '{print $1}'`
+        shuf_cmd="shuf -n $train_phased_phase1_trim_samples --random-source=/tmp/random-but-same $train_phased_phase1_data -o $train_phased_phase1_data.randomly-trimmed"
+	echo "Going to run: $shuf_cmd"
+	$shuf_cmd || exit_error "$shuf_cmd failed"
+        train_phased_phase1_data+=".randomly-trimmed"
+	echo "trimmed data:"
+        if [[ ! -e $train_phased_phase1_data ]]; then
+            exit_error "Could not find $train_phased_phase1_data"
+	fi
+	/bin/ls -l $train_phased_phase1_data
+	echo "scale=2; $original_num_samples / $trimmed_num_samples" | bc >phase1-trimmed-sample-ratio.txt
+        trimmed_num_samples=`wc -l $train_phased_phase1_data | awk '{print $1}'`
+    fi
+
+    if [[ ! -z "$train_phased_phase2_trim_samples" ]]; then
+        if [[ ! -e /tmp/random-but-same ]]; then
+            exit_error "Could not find /tmp/random-but-same"
+	fi
+        original_num_samples=`wc -l $train_phased_phase2_data | awk '{print $1}'`
+        shuf_cmd="shuf -n $train_phased_phase2_trim_samples --random-source=/tmp/random-but-same $train_phased_phase2_data -o $train_phased_phase2_data.randomly-trimmed"
+	echo "Going to run: $shuf_cmd"
+	$shuf_cmd || exit_error "$shuf_cmd failed"
+        train_phased_phase2_data+=".randomly-trimmed"
+	echo "trimmed data:"
+        if [[ ! -e $train_phased_phase2_data ]]; then
+            exit_error "Could not find $train_phased_phase2_data"
+	fi
+	/bin/ls -l $train_phased_phase2_data
+        trimmed_num_samples=`wc -l $train_phased_phase2_data | awk '{print $1}'`
+	echo "scale=2; $original_num_samples / $trimmed_num_samples" | bc >phase2-trimmed-sample-ratio.txt
+    fi
+
+    train_cmd="ilab model train --skip-user-confirm --strategy lab-multiphase"
+    train_cmd+=" --phased-base-dir e2e"
+    train_cmd+=" --model-path $train_model_path"
+    train_cmd+=" --phased-phase1-data $train_phased_phase1_data"
+    train_cmd+=" --phased-phase1-num-epochs $train_phased_phase1_num_epochs"
+    if [[ ! -z "$train_phased_phase1_samples_per_save" ]]; then
+        train_cmd+=" --phased-phase1-samples-per-save $train_phased_phase1_samples_per_save"
+    fi
+    train_cmd+=" --phased-phase2-data $train_phased_phase2_data"
+    train_cmd+=" --phased-phase2-num-epochs $train_phased_phase2_num_epochs"
+    if [[ ! -z "$train_phased_phase2_samples_per_save" ]]; then
+        train_cmd+=" --phased-phase2-samples-per-save $train_phased_phase2_samples_per_save"
+    fi
+    train_cmd+=" --phased-mt-bench-judge $train_phased_mt_bench_judge"
 
     echo "train cmd:"
     echo "$train_cmd"
 
-    count=0
-    rc=0
-
-    if [[ $train_until =~ ^checkpoint:([0-9]+) ]]; then
-        num_samples=${BASH_REMATCH[1]}
-        watch_regex="Model\ssaved\sin\shf_format/(.*)"
-    elif [[ $train_until =~ ^runavg:([0-9]+) ]]; then
-        num_samples=${BASH_REMATCH[1]}
-        watch_regex='RunningAvgSamplesPerSec'
-    else
-        echo "not watching for 'Model saved in' or 'RunningAvgSamplesPerSec' and will train for $num_epochs epochs"
-        num_samples=0
-    fi
-
-    echo "watch_regex: [$watch_regex]"
-    echo "num_samples: [$num_samples]"
     echo "Training:"
     snapshot_file=""
-    $train_cmd 2>&1 |
-    {
-        count=0
-        while read line; do
-            echo "$line" >>train.txt
-            if [[ $line =~ $watch_regex ]]; then
-                snapshot=${BASH_REMATCH[1]}
-                ((count++))
-                echo found $line
-                if [[ $train_until =~ "^checkpoint:([0-9]+)" ]]; then
-                    echo "Found snapshot: hf_format/$snapshot"
-                fi
-            fi
-            if [[ $count -ne 0 && $count -ge $num_samples ]]; then
-                echo "Found the checkpoint we needed: hf_format/$snapshot"
-                echo "hf_format/$snapshot" >last_checkpointed_model.txt
-                break
-            fi
-        done
-        echo "count: $count"
-        if [[ $count -lt $num_samples ]]; then
-            echo "did not get the number of $watch_regex samples, so exiting error"
-            exit 1
-        else
-            echo "Exiting without error"
-            exit 0
-        fi
-    }
+    date +%s >train-start-timestamp.txt
+    $train_cmd >train-stdout.txt 2>train-stderr.txt
     rc=$?
     wait
-    for file in training_params_and_metrics_global0.jsonl full_logs_global0.log train.txt; do
-        if [ -e $file ]; then
-            xz $file
-        fi
-    done
+    date +%s >train-stop-timestamp.txt
+
+    # Delete any file larger than 100 MB (usually model checkpoints)
+    find . -size +100M -type f -print | while read line; do /bin/rm -f $line; done
+
+    # Compress the rest
+    find . -type f | while read line; do xz $line; done
+
 elif [[ $workflow =~ ^sdg.* ]]; then
-    sdg_cmd="ilab data generate\
-            --model $model\
-	    $num_cpus\
-	    $batch_size\
-            $gpus\
-            --output-dir ."
+    ilab data generate --help >ilab-data-generate-help.txt
+    sdg_cmd="ilab data generate"
+    sdg_cmd+=" --model $sdg_model"
+    sdg_cmd+=" $sdg_num_cpus"
+    sdg_cmd+=" $sdg_batch_size"
+    sdg_cmd+=" $sdg_gpus"
+    sdg_cmd+=" --output-dir ."
 
     echo "sdg cmd:"
     echo "$sdg_cmd"
 
+    echo "running ilab taxonomy diff"
     ilab taxonomy diff
 
     # This assumes LoRa already exists and is not downloaded by InstructLab every time
@@ -201,42 +230,18 @@ elif [[ $workflow =~ ^sdg.* ]]; then
     ln -sf /home/data/taxonomy/knowledge/phoenix /opt/app-root/src/.local/share/instructlab/taxonomy/knowledge/phoenix
     ln -sf /home/data/taxonomy/knowledge/mtba /opt/app-root/src/.local/share/instructlab/taxonomy/knowledge/mtba
 
-    ilab diff
     # The following is needed for post-processing
     wc -l /usr/share/instructlab/sdg/datasets/skills.jsonl | awk '{print $1}' >skills-num-samples.txt
 
-    $sdg_cmd >sdg.txt 2>&1
+    $sdg_cmd >sdg-stdout.txt 2>sdg-stderr.txt
     rc=$?
-    xz sdg.txt
+    for file in sdg-stdout.txt sdg-stderr.txt; do
+        xz $file &
+    done
+    wait
 else
     echo "Workflow [$workflow] not supported, exiting"
     exit 1
 fi
-
-if [[ $worklfow == "train+eval" ]]; then
-    if [[ ! -e last_checkpointed_model.txt ]]; then
-        echo "Error: could not find file: last_checkpointed_model.txt"
-    exit 1
-    fi
-    model_path=`cat last_checkpointed_model.txt`
-    if [ ! -e $model_path ]; then
-        echo "Could not find directory for checkpointed model: $model_path"
-    exit 1
-    fi
-    eval_cmd="ilab model evaluate"
-    eval_cmd+=" --benchmark mmlu_branch"
-    eval_cmd+=" --model $model_path"
-    eval_cmd+=" --tasks-dir tests/testdata/mmlu_branch/"
-    eval_cmd+=" --base-model $model"
-    echo "eval_cmd: $eval_cmd"
-    echo "Evaluating:"
-    $eval_cmd >eval.txt 2>&1
-
-else
-    echo "Deleting any snapshots because eval not happening after training"
-    rm -rf ht_format/*
-fi
-
-rm -rf ht_format/*
 
 exit $rc

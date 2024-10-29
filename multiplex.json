@@ -1,38 +1,40 @@
 {
-    "presets": {
+  "presets": {
+  },
+  "validations": {
+    "generic_string" : {
+      "description" : "all types of strings",
+      "args" : [
+        "sdg-model",
+        "train-model-path",
+        "train-profile",
+        "train-phased-phase1-data",
+        "train-phased-phase2-data",
+        "train-phased-mt-bench-judge"
+      ],
+      "vals" : ".+"
     },
-    "validations": {
-      "generic_string" : {
-        "description" : "all types of strings",
-        "args" : [
-            "model", "data-path"
-        ],
-        "vals" : ".+"
-      },
-      "integer_ge_zero" : {
-        "description" : "a whole number >= 0",
-        "args" : [ "batch-size" ],
-        "vals" : "[0-9]+"
-      },
-      "integer_gt_zero" : {
-        "description" : "a whole number > 0",
-        "args" : [ "num-cpus", "nnodes", "gpus", "num-epochs", "effective-batch-size", "max-seq-length", "save-samples" ],
-        "vals" : "[1-9][0-9]*"
-      },
-      "workflows" : {
-        "description" : "what type of work to do",
-        "args" : [ "workflow" ],
-        "vals" : "train|train+eval|eval|sdg|sdg+train|sdg+train+eval"
-      },
-      "train_until" : {
-        "description" : "checkpoint:N, or runavg:N, or complete (N is a positive int)",
-        "args" : [ "train-until" ],
-        "vals" : "((checkpoint|runavg)\\:([1-9][0-9]*)|complete)"
-      },
-      "bool_0_1" : {
-        "description" : "boolean as 0 (false) or 1 (true)",
-        "args" : [ "deepspeed-cpu-offload-optimizer", "deepspeed-cpu-offload-optimizer-pin-memory" ],
-        "vals" : "[0-1]"
-      }
+    "integer_ge_zero" : {
+      "description" : "a whole number >= 0",
+      "args" : [ 
+        "sdg-num-cpus",
+	"sdg-gpus",
+	"sdg-batch-size",
+	"train-model-path",
+	"train-profile",
+	"train-phased-phase1-num-epochs",
+	"train-phased-phase2-num-epochs",
+	"train-phased-phase1-samples-per-save",
+	"train-phased-phase2-samples-per-save",
+	"train-phased-phase1-trim-data-samples",
+	"train-phased-phase2-trim-data-samples"
+      ],
+      "vals" : "[0-9]+"
+    },
+    "workflows" : {
+      "description" : "what type of work to do",
+      "args" : [ "workflow" ],
+      "vals" : "train|sdg"
+    }
   }
 }
