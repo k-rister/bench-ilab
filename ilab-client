@@ -7,7 +7,6 @@ exec 2>&1
 . /usr/bin/ilab-base || (echo "/usr/bin/ilab-base not found"; exit 1)
 
 workflow="train"
-train_until="complete" # checkpoint:N, runavg:N, or complete
 nnodes=1
 train_profile="L40_x4"
 train_model_path="/home/models/granite-7b-redhat-lab"
@@ -21,7 +20,7 @@ train_phased_phase2_num_epochs=2
 train_phased_phase2_samples_per_save=""
 train_phased_phase2_trim_samples="15000"
 
-ilab_version=`ilab --version | awk '{print $3}'`
+ilab --version | awk '{print $3}' >ilab-version.txt
 # 0.19.1 = rhelai 1.2
 # 0.18.3 = rhelai 1.1.0
 
@@ -112,8 +111,6 @@ while true; do
         --train-phased-phase2-trim-data-samples)
             train_phased_phase2_trim_samples=$val
             ;;
-
-
         --)
             break
             ;;
@@ -135,11 +132,6 @@ echo "gpus: $gpus"
 
 if [[ $workflow =~ ^train.* ]]; then
     ilab model train --help >ilab-model-train-help.txt
-    echo "train_until: $train_until"
-    #echo "num_epochs: $num_epochs"
-    #echo "save_sample: $save_samples"
-    #echo "max_seq_length: $max_seq_length"
-    #echo "effective_batch_size: $effective_batch_size"
     echo "cpu_offload_optimizer: $cpu_offload_optimizer"
     echo "cpu_offload_pin_memory: $cpu_offload_pin_memory"
     mkdir -p e2e
@@ -181,22 +173,18 @@ if [[ $workflow =~ ^train.* ]]; then
     fi
 
     train_cmd="ilab model train --skip-user-confirm --strategy lab-multiphase"
-
     train_cmd+=" --phased-base-dir e2e"
     train_cmd+=" --model-path $train_model_path"
-
     train_cmd+=" --phased-phase1-data $train_phased_phase1_data"
     train_cmd+=" --phased-phase1-num-epochs $train_phased_phase1_num_epochs"
     if [[ ! -z "$train_phased_phase1_samples_per_save" ]]; then
         train_cmd+=" --phased-phase1-samples-per-save $train_phased_phase1_samples_per_save"
     fi
-
     train_cmd+=" --phased-phase2-data $train_phased_phase2_data"
     train_cmd+=" --phased-phase2-num-epochs $train_phased_phase2_num_epochs"
     if [[ ! -z "$train_phased_phase2_samples_per_save" ]]; then
         train_cmd+=" --phased-phase2-samples-per-save $train_phased_phase2_samples_per_save"
     fi
-
     train_cmd+=" --phased-mt-bench-judge $train_phased_mt_bench_judge"
 
     echo "train cmd:"

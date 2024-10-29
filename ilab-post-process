@@ -48,54 +48,11 @@ def process_options():
 
     return()
 
-def traverse_yaml(o, prepend):
-    for key in o:
-        if isinstance(o[key], dict):
-            traverse_yaml(o[key], key)
-        else:
-            val_str = "%s" % (o[key])
-            if prepend == "":
-                params_name = "%s" % (key)
-            else:
-                params_name = "%s.%s" % (prepend,key)
-            print("%s: %s" % (params_name, val_str))
-            params[params_name] = val_str
-    return()
-
-
-def process_config_yaml():
-    with open("config.yaml") as stream:
-        try:
-            c=yaml.safe_load(stream)
-            traverse_yaml(c, "")
-        except yaml.YAMLError as exc:
-            print(exc)
-    return()
-
-
 def main():
     process_options()
     if t_global.args.workflow == '':
         print('workflow was not defined, exiting')
         return(1)
-
-    # While a crucible run contains parameters for a benchmark, it is possible
-    # that many parameters that are used are omitted by the params input.  The
-    # post-proceesing script can add parameters if it can detect them from the
-    # generated benchmark data.
-
-    # Note: the cmdline options passed to this script are the crucible benchmark
-    # params
-
-    # First process what the params are from the config.yaml that is generated
-    # via 'ilab config init'
-    ## process_config_yaml()
-
-    # Next, find any matching params from cmdline opts and override any matching
-    # one with the new value.
-    #add_cmdline_opts()
-
-    print(params)
 
     # In any benchmark post-process script, the metrics generated need to be attributed to a
     # time-period (AKA benchmark-phase).  The period which is used to report and offical
@@ -220,4 +177,3 @@ def main():
 
 if __name__ == "__main__":
     exit(main())
-
