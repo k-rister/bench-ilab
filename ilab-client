@@ -9,9 +9,10 @@ exec 2>&1
 workflow="train"
 nnodes=1
 train_profile="L40_x4"
-train_model_path="/home/models/granite-7b-redhat-lab"
-train_phased_mt_bench_judge="/root/.cache/instructlab/models/prometheus-8x7b-v2-0"
-train_phased_phase1_data="/home/data/training/jul19-knowledge-26k.jsonl"
+#train_profile="l40s_x4"
+train_model_path="/opt/app-root/src/.cache/instructlab/models/"
+train_phased_mt_bench_judge="/opt/app-root/src/.cache/instructlab/models/mixtral-8x7b-instruct-v0-1"
+train_phased_phase1_data="/opt/app-root/src/jul19-knowledge-26k.jsonl"
 train_phased_phase1_num_epochs=2
 train_phased_phase1_samples_per_save=""
 train_phased_phase1_trim_samples=""
@@ -20,9 +21,21 @@ train_phased_phase2_num_epochs=2
 train_phased_phase2_samples_per_save=""
 train_phased_phase2_trim_samples="15000"
 
+
 ilab --version | awk '{print $3}' >ilab-version.txt
 # 0.19.1 = rhelai 1.2
 # 0.18.3 = rhelai 1.1.0
+# 0.19.4 = rhelai 1.3 (1.3-1731008330)
+#          train requires --pipeline accelerated
+# 0.21.0 = rhelai 1.3 (1.3-1731765389, 1.3-1732883997)
+#          uses 'ilab config init --profile'
+#          train requires --pipeline accelerated
+# 0.21.2 = rhelai 1.3.1
+ilab_version=`cat ilab-version.txt`
+ilab_version_0=`echo $ilab_verion | awk -F. '{print $1}'`
+ilab_version_1=`echo $ilab_verion | awk -F. '{print $2}'`
+ilab_version_2=`echo $ilab_verion | awk -F. '{print $3}'`
+
 
 pwd=`/bin/pwd`
 pushd /opt/app-root/lib/python3.11/site-packages
@@ -122,7 +135,9 @@ done
 
 # Valid values for $train_profile:
 # A100_H100_x2 A100_H100_x4 A100_H100_x8 L40_x4 L40_x8 L4_x8 train_a100x4x8
-ilab config init --non-interactive --train-profile /usr/share/instructlab/training/profiles/$train_profile.yaml
+#ilab config init --non-interactive --train-profile /usr/share/instructlab/training/profiles/$train_profile.yaml
+#ilab config init --non-interactive --profile /usr/share/instructlab/profiles/nvidia/l40s/$train_profile.yaml
+ilab config init --non-interactive
 
 ilab config show >ilab-config-show.yaml
 
@@ -141,6 +156,7 @@ if [[ $workflow =~ ^train.* ]]; then
             exit_error "Could not find /tmp/random-but-same"
 	fi
         original_num_samples=`wc -l $train_phased_phase1_data | awk '{print $1}'`
+	echo "original_num_samples: $original_num_samples"
         shuf_cmd="shuf -n $train_phased_phase1_trim_samples --random-source=/tmp/random-but-same $train_phased_phase1_data -o $train_phased_phase1_data.randomly-trimmed"
 	echo "Going to run: $shuf_cmd"
 	$shuf_cmd || exit_error "$shuf_cmd failed"
@@ -150,8 +166,9 @@ if [[ $workflow =~ ^train.* ]]; then
             exit_error "Could not find $train_phased_phase1_data"
 	fi
 	/bin/ls -l $train_phased_phase1_data
-	echo "scale=2; $original_num_samples / $trimmed_num_samples" | bc >phase1-trimmed-sample-ratio.txt
         trimmed_num_samples=`wc -l $train_phased_phase1_data | awk '{print $1}'`
+	echo "trimmed_num_samples: $trimmed_num_samples"
+	echo "scale=2; $original_num_samples / $trimmed_num_samples" | bc >phase1-trimmed-sample-ratio.txt
     fi
 
     if [[ ! -z "$train_phased_phase2_trim_samples" ]]; then
@@ -187,6 +204,11 @@ if [[ $workflow =~ ^train.* ]]; then
     fi
     train_cmd+=" --phased-mt-bench-judge $train_phased_mt_bench_judge"
 
+    echo "ilab_verion_1: [$$ilab_version_1]"
+    if [ $ilab_version_1 -ge 19 ]; then
+        train_cmd+=" --pipeline accelerated"
+    fi
+
     echo "train cmd:"
     echo "$train_cmd"
 
@@ -212,6 +234,7 @@ elif [[ $workflow =~ ^sdg.* ]]; then
     sdg_cmd+=" $sdg_batch_size"
     sdg_cmd+=" $sdg_gpus"
     sdg_cmd+=" --output-dir ."
+    sdg_cmd+=" --enable-serving-output"
 
     echo "sdg cmd:"
     echo "$sdg_cmd"
