@@ -6,7 +6,7 @@
     },
     "userenvs": [
         {
-            "name": "rhel-ai",
+            "name": "default",
             "requirements": []
         }
     ],

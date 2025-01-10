@@ -1,3 +1,4 @@
 #!/bin/bash
 
 if ! source ${TOOLBOX_HOME}/bash/library/bench-base; then echo "ERROR: Could not source bench-base from \$TOOLBOX_HOME [${TOOLBOX_HOME}]"; exit 1; fi
+export LD_LIBRARY_PATH=$(echo $LD_LIBRARY_PATH | sed s+/usr/local/cuda/compat++)
