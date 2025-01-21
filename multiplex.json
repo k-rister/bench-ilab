@@ -20,8 +20,6 @@
         "sdg-num-cpus",
 	"sdg-gpus",
 	"sdg-batch-size",
-	"train-model-path",
-	"train-profile",
 	"train-phased-phase1-num-epochs",
 	"train-phased-phase2-num-epochs",
 	"train-phased-phase1-samples-per-save",
