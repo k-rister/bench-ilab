@@ -6,12 +6,17 @@ exec 2>&1
 
 . /usr/bin/ilab-base || (echo "/usr/bin/ilab-base not found"; exit 1)
 
+which ilab
+ls -lR /opt
+
+ilab_bin=/opt/app-root/bin/ilab
+
 workflow="train"
 nnodes=1
 train_profile="L40_x4"
 #train_profile="l40s_x4"
 train_model_path="/opt/app-root/src/.cache/instructlab/models/"
-train_phased_mt_bench_judge="/opt/app-root/src/.cache/instructlab/models/mixtral-8x7b-instruct-v0-1"
+train_phased_mt_bench_judge="/opt/app-root/src/.cache/instructlab/models/prometheus-8x7b-v2-0"
 train_phased_phase1_data="/opt/app-root/src/jul19-knowledge-26k.jsonl"
 train_phased_phase1_num_epochs=2
 train_phased_phase1_samples_per_save=""
@@ -22,7 +27,7 @@ train_phased_phase2_samples_per_save=""
 train_phased_phase2_trim_samples="15000"
 
 
-ilab --version | awk '{print $3}' >ilab-version.txt
+$ilab_bin --version | awk '{print $3}' >ilab-version.txt
 # 0.19.1 = rhelai 1.2
 # 0.18.3 = rhelai 1.1.0
 # 0.19.4 = rhelai 1.3 (1.3-1731008330)
@@ -32,9 +37,9 @@ ilab --version | awk '{print $3}' >ilab-version.txt
 #          train requires --pipeline accelerated
 # 0.21.2 = rhelai 1.3.1
 ilab_version=`cat ilab-version.txt`
-ilab_version_0=`echo $ilab_verion | awk -F. '{print $1}'`
-ilab_version_1=`echo $ilab_verion | awk -F. '{print $2}'`
-ilab_version_2=`echo $ilab_verion | awk -F. '{print $3}'`
+ilab_version_0=`echo $ilab_version | awk -F. '{print $1}'`
+ilab_version_1=`echo $ilab_version | awk -F. '{print $2}'`
+ilab_version_2=`echo $ilab_version | awk -F. '{print $3}'`
 
 
 pwd=`/bin/pwd`
@@ -137,16 +142,16 @@ done
 # A100_H100_x2 A100_H100_x4 A100_H100_x8 L40_x4 L40_x8 L4_x8 train_a100x4x8
 #ilab config init --non-interactive --train-profile /usr/share/instructlab/training/profiles/$train_profile.yaml
 #ilab config init --non-interactive --profile /usr/share/instructlab/profiles/nvidia/l40s/$train_profile.yaml
-ilab config init --non-interactive
+$ilab_bin config init --non-interactive
 
-ilab config show >ilab-config-show.yaml
+$ilab_bin config show >ilab-config-show.yaml
 
 echo "workflow: $workflow"
 echo "nnodes: $nnodes"
 echo "gpus: $gpus"
 
 if [[ $workflow =~ ^train.* ]]; then
-    ilab model train --help >ilab-model-train-help.txt
+    $ilab_bin model train --help >ilab-model-train-help.txt
     echo "cpu_offload_optimizer: $cpu_offload_optimizer"
     echo "cpu_offload_pin_memory: $cpu_offload_pin_memory"
     mkdir -p e2e
@@ -189,7 +194,7 @@ if [[ $workflow =~ ^train.* ]]; then
 	echo "scale=2; $original_num_samples / $trimmed_num_samples" | bc >phase2-trimmed-sample-ratio.txt
     fi
 
-    train_cmd="ilab model train --skip-user-confirm --strategy lab-multiphase"
+    train_cmd="$ilab_bin model train --skip-user-confirm --strategy lab-multiphase"
     train_cmd+=" --phased-base-dir e2e"
     train_cmd+=" --model-path $train_model_path"
     train_cmd+=" --phased-phase1-data $train_phased_phase1_data"
@@ -204,10 +209,13 @@ if [[ $workflow =~ ^train.* ]]; then
     fi
     train_cmd+=" --phased-mt-bench-judge $train_phased_mt_bench_judge"
 
-    echo "ilab_verion_1: [$$ilab_version_1]"
+    echo "ilab_verion_1: [$ilab_version_1]"
     if [ $ilab_version_1 -ge 19 ]; then
         train_cmd+=" --pipeline accelerated"
     fi
+
+    # added by atheurer to debug vllm launch failure
+    train_cmd+=" --enable-serving-output"
 
     echo "train cmd:"
     echo "$train_cmd"
@@ -227,8 +235,8 @@ if [[ $workflow =~ ^train.* ]]; then
     find . -type f | while read line; do xz $line; done
 
 elif [[ $workflow =~ ^sdg.* ]]; then
-    ilab data generate --help >ilab-data-generate-help.txt
-    sdg_cmd="ilab data generate"
+    $ilab_bin data generate --help >ilab-data-generate-help.txt
+    sdg_cmd="$ilab_bin data generate"
     sdg_cmd+=" --model $sdg_model"
     sdg_cmd+=" $sdg_num_cpus"
     sdg_cmd+=" $sdg_batch_size"
@@ -240,7 +248,7 @@ elif [[ $workflow =~ ^sdg.* ]]; then
     echo "$sdg_cmd"
 
     echo "running ilab taxonomy diff"
-    ilab taxonomy diff
+    $ilab_bin taxonomy diff
 
     # This assumes LoRa already exists and is not downloaded by InstructLab every time
     # This assumes dir for LoRa is always in /home/data/lora, should be changed to a bench param (--lora-dir)
