@@ -7,7 +7,7 @@
       "args" : [
         "sdg-model",
         "train-model-path",
-        "train-profile",
+        "profile-name",
         "train-phased-phase1-data",
         "train-phased-phase2-data",
         "train-phased-mt-bench-judge"
@@ -33,6 +33,11 @@
       "description" : "what type of work to do",
       "args" : [ "workflow" ],
       "vals" : "train|sdg"
+    },
+    "gpu_vendor": {
+      "description": "A set of supported GPU vendors",
+      "args": [ "profile-vendor" ],
+      "vals": "amd|nvidia"
     }
   }
 }
