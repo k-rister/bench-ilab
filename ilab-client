@@ -150,13 +150,25 @@ done
 #ilab config init --non-interactive --train-profile /usr/share/instructlab/training/profiles/$train_profile.yaml
 #ilab config init --non-interactive --profile /usr/share/instructlab/profiles/nvidia/l40s/$train_profile.yaml
 
+echo "ilab_version_1:  $ilab_version_1"
+echo "ilab_version_2:  $ilab_version_2"
+echo "ilab_version_3:  $ilab_version_3"
+
+# This is required because /opt/app-root/src/.local/share/instructlab does *not* exist until
+# this is run
+ilab config init --non-interactive
+# Now ilab config init --profile <path> can be used
+
 full_profile_arg=""
-if [ $ilab_version_1 -ge 19 ]; then # RHELAI 1.3 and above
+# amt: changed -ge 4 to -ge 1
+if [ $ilab_version_1 -ge 19 ] && [ $ilab_version_2 -ge 1 ]; then # RHELAI 1.3 and above
     full_profile_arg="--profile $profile_path/$profile_vendor/$profile_name.yaml"
 else # RHELAI 1.2 and below
     profile_path="/opt/app-root/src/.local/share/instructlab/internal/train_configuration/profiles"
     full_profile_arg="--train-profile $profile_path/$profile_name.yaml"
 fi
+echo "ilab config init options: $full_profile_arg"
+echo "about to run: ilab config init $full_profile_arg"
 
 ilab config init $full_profile_arg
 
@@ -292,3 +304,4 @@ else
 fi
 
 exit $rc
+
